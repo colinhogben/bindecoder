@@ -82,6 +82,16 @@ class JpgDecoder(Decoder):
                                 with self.view.map('thumbnail_rgb'):
                                     self.hexdump(self.read(3*xthumb*ythumb))
                         self.hexdump(self.read())
+                elif name == 'APP1':
+                    with self.substream(size - 2):
+                        atype = self.read(4)
+                        if atype == b'Exif':
+                            zz = self.read(2)
+                            with self.substream(size - 8):
+                                tiff = TIFFDecoder(self.stream, self.view)
+                                tiff.run()
+                        else:
+                            self.hexdump(self.read())
                 elif name == 'DQT':
                     with self.substream(size - 2):
                         qt = self.u1()
@@ -134,7 +144,7 @@ class JpgDecoder(Decoder):
                                     self.vset('DC_table', huff >> 4)
                         self.hexdump(self.read())
                     with self.view.map('entropy_coded'):
-                        self.hexdump(self.read(256))
+                        self.hexdump(self.read())
                 else:
                     self.hexdump(self.read(size - 2))
         return True
@@ -157,6 +167,145 @@ class JpgDecoder(Decoder):
             self.vset(offset[1:].replace(' ','0'), dump)
         if len(data) > limit:
             self.vset('dump_size', len(data))
+
+# https://www.awaresystems.be/imaging/tiff/tifftags/baseline.html
+# https://exiftool.org/TagNames/EXIF.html
+tiff_tag = {
+    #0x106: 'PhotometricInterpretation',
+    0x10e: 'ImageDescription',
+    0x10f: 'Make',
+    0x110: 'Model',
+    0x112: 'Orientation',
+    0x11a: 'XResolution',
+    0x11b: 'YResolution',
+    0x128: 'ResolutionUnit',
+    0x131: 'Software',
+    0x132: 'DateTime',
+    0x213: 'YCbCrPositioning',
+    0x8769: 'ExifIFD',
+    0x8298: 'Copyright',
+    0x829a: 'ExposureTime',
+    0x829d: 'FNumber',
+    0x8822: 'ExposureProgram',
+    0x8827: 'ISOSpeedRatings',
+    0x8830: 'SensitivityType',
+    0x8832: 'RecommendedExposureIndex',
+    0x9000: 'ExifVersion',
+    0x9003: 'DateTimeOriginal',
+    0x9004: 'DateTimeDigitized',
+    0x9101: 'ComponentsConfiguration',
+    0x9102: 'CompressedBitsPerPixel',
+    0x9201: 'ShutterSpeedValue',
+    0x9202: 'ApertureValue',
+    0x9203: 'BrightnessValue',
+    0x9204: 'ExposureBiasValue',
+    0x9205: 'MaxApertureValue',
+    0x9207: 'MeteringMode',
+    0x9208: 'LightSource',
+    0x9209: 'LightSource',
+    0x920a: 'FocalLength',
+    0x9286: 'UserComment',
+    0x927c: 'MakerNote',
+    0xa000: 'FlashpixVersion',
+    0xa001: 'ColorSpace',
+    0xa002: 'PixelXDimension',
+    0xa003: 'PixelYDimension',
+    0xa005: 'InteroperabilityIFD',
+    0xa20e: 'FocalPlaneXResolution',
+    0xa20f: 'FocalPlaneYResolution',
+    0xa210: 'FocalPlaneResolutionUnit',
+    0xa217: 'SensingMethod',
+    0xa300: 'FileSource',
+    0xa401: 'CustomRendered',
+    0xa402: 'ExposureMode',
+    0xa403: 'WhiteBalance',
+    0xa404: 'DigitalZoomRatio',
+    0xa406: 'SceneCaptureType',
+    0xa40a: 'Sharpness',
+    }
+
+class TIFFDecoder(Decoder):
+    def __init__(self, stream, view):
+        ee = stream.read(2)
+        if ee == b'II':
+            super(TIFFDecoder,self).__init__(stream, view, big_endian=False)
+        elif ee == b'MM':
+            super(TIFFDecoder,self).__init__(stream, view, big_endian=True)
+        else:
+            raise ValueError('Invalid TIFF header: expected II or MM')
+        vv = self.u2()
+        if vv != 42:
+            raise ValueError('Expected 42 after TIFF endian header')
+
+    def run(self):
+        ifdpos = self.u4('_ifdpos')
+        self.vset('_at', self.stream.tell())
+        # Must be >= 8, i.e. what we've read so far
+        self.do_ifd(ifdpos)
+
+    def do_ifd(self, ifdpos):
+        self.seek(ifdpos)
+        nifd = self.u2('_nifd')
+        with self.view.map('IFD'):
+            for i in range(nifd):
+                self.stream.seek(ifdpos + 2 + 12*i)
+                tag = self.u2()
+                ftype = self.u2()
+                count = self.u4()
+                tagname = tiff_tag.get(tag,None) or 'tag_%#x' % tag
+                if ftype == 1: # BYTE
+                    assert count == 1
+                    value = self.u1()
+                    value = 'BYTE[%d]@%d' % (count, offset)
+                elif ftype == 2: # ASCII
+                    offset = self.u4()
+                    self.stream.seek(offset)
+                    vbytes = self.read(count)
+                    value = vbytes.decode('ascii').rstrip('\0')
+                    #value = 'ASCII[%d]@%d' % (count, offset)
+                elif ftype == 3: # SHORT
+                    assert count == 1
+                    value = self.u2()
+                    #value = 'SHORT[%d]@%d' % (count, offset)
+                elif ftype == 4: # LONG
+                    assert count == 1
+                    value = self.u4()
+                    #value = 'LONG[%d]@%d' % (count, offset)
+                elif ftype == 5: # RATIONAL
+                    offset = self.u4()
+                    self.stream.seek(offset)
+                    num = self.u4()
+                    den = self.u4()
+                    value = '%d/%d' % (num, den)
+                elif ftype == 7:  # UNDEFINED
+                    if count > 4:
+                        offset = self.u4('_offset')
+                        self.seek(offset)
+                    try:
+                        value = self.read(count)
+                    except EOFError:
+                        value = None
+                elif ftype == 10: # SRATIONAL
+                    offset = self.u4()
+                    self.stream.seek(offset)
+                    num = self.i4()
+                    den = self.i4()
+                    value = '%d/%d' % (num, den)
+                else:
+                    with self.view.map(i):
+                        self.vset('tag', tagname)
+                        self.vset('ftype', ftype)
+                        self.vset('count', count)
+                        self.u4('offset')
+                    continue
+                    #raise ValueError('Unexpected field type %d' % ftype)
+                if tagname in ('ExifIFD','XXInteroperabilityIFD'):
+                    # InteroperabilityIFD broken or other layout?
+                    self.vset('_inner', value)
+                    with self.view.map(tagname):
+                        self.do_ifd(value)
+                else:
+                    self.vset(tagname, value)
 
 def main():
     import sys
