@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 #=======================================================================
 #       Decode Quicktime (.mov) file
+#	Also MPEG-4 (mp42) and JPEG-2000 (isom) (?)
+#	ISO/IEC 14496-12:2004 (MPEG-4 Part 12: ISO base media file format)
 #
 #	https://en.wikipedia.org/wiki/QuickTime_File_Format
 #	https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFPreface/qtffPreface.html
@@ -39,8 +41,6 @@ class QtDecoder(Decoder):
                     self.hexdump(rest)
         return True
 
-    #def do_ftyp(self, data):
-    #def do_moov(self, data):
     #    self.decode
     do_moov = atoms
     do_trak = atoms
@@ -55,6 +55,21 @@ class QtDecoder(Decoder):
         self.hexdump(self.read())
 
     do_dinf = atom_data
+
+    def do_ftyp(self):
+        brand = self.s4()       # 'qt  ' or 'mp42'
+        self.putv('brand', brand)
+        self.putv('minor', self.u4())
+        with self.view.array('compatible'):
+            i = 0
+            while True:
+                try:
+                    comp = self.s4()
+                except EOFError:
+                    break
+                if comp != '\0\0\0\0':
+                    self.putv(i, comp)
+                i += 1
 
     def do_tkhd(self):
         vf = self.u4()
