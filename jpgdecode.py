@@ -1,8 +1,11 @@
 #!/usr/bin/python3
 #=======================================================================
 #       Decode JPEG (JFIF) file
-#	https://en.wikipedia.org/wiki/JPEG
-#	http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
+#       https://en.wikipedia.org/wiki/JPEG
+#       http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
+#       https://users.cs.cf.ac.uk/Dave.Marshall/Multimedia/node234.html
+#       https://johnloomis.org/ece563/notes/compression/jpeg/tutorial/jpegtut1.html
+#       https://www.w3.org/Graphics/JPEG/itu-t81.pdf
 #=======================================================================
 from decoder import Decoder, PlainViewer
 from hexdumper import HexDumper
@@ -44,8 +47,9 @@ marker_name = {
     }
 
 class JpgDecoder(Decoder):
-    def __init__(self, file, view):
+    def __init__(self, file, view, with_ecd=False):
         super(JpgDecoder,self).__init__(file, view, big_endian=True)
+        self.with_ecd = with_ecd
 
     def run(self):
         while self.segment():
@@ -81,6 +85,14 @@ class JpgDecoder(Decoder):
                             if xthumb * ythumb:
                                 with self.view.map('thumbnail_rgb'):
                                     self.hexdump(self.read(3*xthumb*ythumb))
+                        elif ident == 'AVI1':
+                            # Example from borescope
+                            # 0000 = ' 01 01 01 00  78 00 78 00  00 00 00 00  00 00 00 00  ....x.x.........'
+                            # 0010 = ' 00 00 00 00  00 00 00 00  00 00                     ..........'
+                            # Some clues from http://www.gdcl.co.uk/2013/05/02/Motion-JPEG.html
+                            pol = self.u1()
+                            self.vset('polarity', pol)
+                            # Remainder unknown
                         self.hexdump(self.read())
                 elif name == 'APP1':
                     with self.substream(size - 2):
@@ -92,6 +104,31 @@ class JpgDecoder(Decoder):
                                 tiff.run()
                         else:
                             self.hexdump(self.read())
+                elif name == 'APP13':
+                    with self.substream(size - 2):
+                        app = self.read(14)
+                        self.vset('app', app)
+                        if app == b'Photoshop 3.0\0':
+                            type = self.read(4)
+                            self.vset('type', type)
+                            if type == b'8BIM':
+                                with self.endian(True):
+                                    itag = self.u2('itag')
+                                    nlen = self.u1()
+                                    tag_name = self.read(nlen)
+                                    if nlen % 2 == 0:
+                                        self.read(1) # Align
+                                    size = self.u4('size')
+                                    id = self.u1('id')
+                                    if id == 0x1c:
+                                        rec = self.u1('rec')
+                                        tag = self.u1('tag')
+                                        len = self.u2('len')
+                                        if tag == 25:
+                                            # Keywords
+                                            kw = self.read(len).rstrip(b'\0')
+                                            self.vset('keywords', kw)
+                        self.hexdump(self.read())
                 elif name == 'DQT':
                     with self.substream(size - 2):
                         qt = self.u1()
@@ -113,6 +150,10 @@ class JpgDecoder(Decoder):
                                     self.vset('vert_factor', vh & 0xf)
                                     self.vset('horz_factor', vh >> 4)
                                     self.vset('quant_table', self.u1())
+                        self.hexdump(self.read())
+                elif name == 'DRI':
+                    with self.substream(size - 2):
+                        self.vset('restart_interval', self.u2())
                         self.hexdump(self.read())
                 elif name == 'DHT':
                     with self.substream(size - 2):
@@ -143,7 +184,22 @@ class JpgDecoder(Decoder):
                                     self.vset('AC_table', huff & 0x0f)
                                     self.vset('DC_table', huff >> 4)
                         self.hexdump(self.read())
+                    if not self.with_ecd:
+                        return False
                     with self.view.map('entropy_coded'):
+                        # ff00 at:
+                        # 44e
+                        # 674
+                        # 6ae
+                        # 71f
+                        # 7a6
+                        # 99b
+                        # 9bf
+                        # a57
+                        # b2a
+                        # bf3
+                        # c9b
+                        # Then ffd9
                         self.hexdump(self.read())
                 else:
                     self.hexdump(self.read(size - 2))
@@ -181,11 +237,14 @@ tiff_tag = {
     0x128: 'ResolutionUnit',
     0x131: 'Software',
     0x132: 'DateTime',
+    0x201: 'ThumbnailOffset',
+    0x202: 'ThumbnailLength',
+    0x212: 'YCbCrSubSampling',
     0x213: 'YCbCrPositioning',
-    0x8769: 'ExifIFD',
     0x8298: 'Copyright',
     0x829a: 'ExposureTime',
     0x829d: 'FNumber',
+    0x8769: 'ExifIFD',
     0x8822: 'ExposureProgram',
     0x8827: 'ISOSpeedRatings',
     0x8830: 'SensitivityType',
@@ -204,8 +263,8 @@ tiff_tag = {
     0x9208: 'LightSource',
     0x9209: 'LightSource',
     0x920a: 'FocalLength',
-    0x9286: 'UserComment',
     0x927c: 'MakerNote',
+    0x9286: 'UserComment',
     0xa000: 'FlashpixVersion',
     0xa001: 'ColorSpace',
     0xa002: 'PixelXDimension',
@@ -216,13 +275,86 @@ tiff_tag = {
     0xa210: 'FocalPlaneResolutionUnit',
     0xa217: 'SensingMethod',
     0xa300: 'FileSource',
+    0xa301: 'SceneType',
     0xa401: 'CustomRendered',
     0xa402: 'ExposureMode',
     0xa403: 'WhiteBalance',
     0xa404: 'DigitalZoomRatio',
     0xa406: 'SceneCaptureType',
     0xa40a: 'Sharpness',
+    0xa420: 'ImageUniqueID',
     }
+
+def decode_ifd(self, ifdpos, base=0):
+    """Mixin to decode IFD (EXIF) data.
+
+    Offsets for string tags are relative to the start of the stream.
+    In TIFF & JPEG files, there is a preamble with endianness etc.,
+    whereas in AVI.strd.AVIF the offsets are from the nifd count.
+    """
+    self.seek(ifdpos)
+    nifd = self.u2('_nifd')
+    with self.view.map('IFD'):
+        for i in range(nifd):
+            self.stream.seek(ifdpos + 2 + 12*i)
+            tag = self.u2()
+            ftype = self.u2()
+            count = self.u4()
+            tagname = tiff_tag.get(tag,None) or 'tag_%#x' % tag
+            if ftype == 1: # BYTE
+                assert count == 1
+                value = self.u1()
+                value = 'BYTE[%d]@%d' % (count, offset)
+            elif ftype == 2: # ASCII
+                offset = self.u4()
+                self.stream.seek(base + offset)
+                vbytes = self.read(count)
+                value = vbytes.decode('ascii').rstrip('\0')
+                #value = 'ASCII[%d]@%d' % (count, offset)
+            elif ftype == 3: # SHORT
+                if count == 1:
+                    value = self.u2()
+                else:
+                    value = [self.u2() for i in range(count)]
+            elif ftype == 4: # LONG
+                assert count == 1
+                value = self.u4()
+                #value = 'LONG[%d]@%d' % (count, offset)
+            elif ftype == 5: # RATIONAL
+                offset = self.u4()
+                self.stream.seek(base + offset)
+                num = self.u4()
+                den = self.u4()
+                value = '%d/%d' % (num, den)
+            elif ftype == 7:  # UNDEFINED
+                if count > 4:
+                    offset = self.u4('_offset')
+                    self.seek(base + offset)
+                try:
+                    value = self.read(count)
+                except EOFError:
+                    value = None
+            elif ftype == 10: # SRATIONAL
+                offset = self.u4()
+                self.stream.seek(base + offset)
+                num = self.i4()
+                den = self.i4()
+                value = '%d/%d' % (num, den)
+            else:
+                with self.view.map(i):
+                    self.vset('tag', tagname)
+                    self.vset('ftype', ftype)
+                    self.vset('count', count)
+                    self.u4('offset')
+                continue
+                #raise ValueError('Unexpected field type %d' % ftype)
+            if tagname in ('ExifIFD','XXInteroperabilityIFD'):
+                # InteroperabilityIFD broken or other layout?
+                self.vset('_inner', value)
+                with self.view.map(tagname):
+                    decode_ifd(self, base + value, base)
+            else:
+                self.vset(tagname, value)
 
 class TIFFDecoder(Decoder):
     def __init__(self, stream, view):
@@ -241,77 +373,20 @@ class TIFFDecoder(Decoder):
         ifdpos = self.u4('_ifdpos')
         self.vset('_at', self.stream.tell())
         # Must be >= 8, i.e. what we've read so far
-        self.do_ifd(ifdpos)
-
-    def do_ifd(self, ifdpos):
-        self.seek(ifdpos)
-        nifd = self.u2('_nifd')
-        with self.view.map('IFD'):
-            for i in range(nifd):
-                self.stream.seek(ifdpos + 2 + 12*i)
-                tag = self.u2()
-                ftype = self.u2()
-                count = self.u4()
-                tagname = tiff_tag.get(tag,None) or 'tag_%#x' % tag
-                if ftype == 1: # BYTE
-                    assert count == 1
-                    value = self.u1()
-                    value = 'BYTE[%d]@%d' % (count, offset)
-                elif ftype == 2: # ASCII
-                    offset = self.u4()
-                    self.stream.seek(offset)
-                    vbytes = self.read(count)
-                    value = vbytes.decode('ascii').rstrip('\0')
-                    #value = 'ASCII[%d]@%d' % (count, offset)
-                elif ftype == 3: # SHORT
-                    assert count == 1
-                    value = self.u2()
-                    #value = 'SHORT[%d]@%d' % (count, offset)
-                elif ftype == 4: # LONG
-                    assert count == 1
-                    value = self.u4()
-                    #value = 'LONG[%d]@%d' % (count, offset)
-                elif ftype == 5: # RATIONAL
-                    offset = self.u4()
-                    self.stream.seek(offset)
-                    num = self.u4()
-                    den = self.u4()
-                    value = '%d/%d' % (num, den)
-                elif ftype == 7:  # UNDEFINED
-                    if count > 4:
-                        offset = self.u4('_offset')
-                        self.seek(offset)
-                    try:
-                        value = self.read(count)
-                    except EOFError:
-                        value = None
-                elif ftype == 10: # SRATIONAL
-                    offset = self.u4()
-                    self.stream.seek(offset)
-                    num = self.i4()
-                    den = self.i4()
-                    value = '%d/%d' % (num, den)
-                else:
-                    with self.view.map(i):
-                        self.vset('tag', tagname)
-                        self.vset('ftype', ftype)
-                        self.vset('count', count)
-                        self.u4('offset')
-                    continue
-                    #raise ValueError('Unexpected field type %d' % ftype)
-                if tagname in ('ExifIFD','XXInteroperabilityIFD'):
-                    # InteroperabilityIFD broken or other layout?
-                    self.vset('_inner', value)
-                    with self.view.map(tagname):
-                        self.do_ifd(value)
-                else:
-                    self.vset(tagname, value)
+        decode_ifd(self, ifdpos)
 
 def main():
-    import sys
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-e','--ecd','--entropy-coded-data', action='store_true',
+                    help='Dump entry-coded data')
+    ap.add_argument('jpgfile',
+                    help='JPEG file to dump')
+    args = ap.parse_args()
     view = PlainViewer()
-    with open(sys.argv[1],'rb') as f:
-        dec = JpgDecoder(f, view)
+    with open(args.jpgfile,'rb') as f:
+        dec = JpgDecoder(f, view, with_ecd=args.ecd)
         dec.run()
 
-main()
+if __name__=='__main__':
+    main()
