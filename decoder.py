@@ -80,6 +80,14 @@ class Decoder:
         finally:
             self.stream, self.pos = self.stream_stack.pop()
 
+    @contextmanager
+    def endian(self, big):
+        old_end, self.end = self.end, '>' if big else '<'
+        try:
+            yield
+        finally:
+            self.end = old_end
+
     def vset(self, name, value):
         self.view.set(name, value)
 
