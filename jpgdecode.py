@@ -6,6 +6,7 @@
 #       https://users.cs.cf.ac.uk/Dave.Marshall/Multimedia/node234.html
 #       https://johnloomis.org/ece563/notes/compression/jpeg/tutorial/jpegtut1.html
 #       https://www.w3.org/Graphics/JPEG/itu-t81.pdf
+#	https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/
 #=======================================================================
 from decoder import Decoder, PlainViewer
 from hexdumper import HexDumper
@@ -109,26 +110,9 @@ class JpgDecoder(Decoder):
                         app = self.read(14)
                         self.vset('app', app)
                         if app == b'Photoshop 3.0\0':
-                            type = self.read(4)
-                            self.vset('type', type)
-                            if type == b'8BIM':
-                                with self.endian(True):
-                                    itag = self.u2('itag')
-                                    nlen = self.u1()
-                                    tag_name = self.read(nlen)
-                                    if nlen % 2 == 0:
-                                        self.read(1) # Align
-                                    size = self.u4('size')
-                                    id = self.u1('id')
-                                    if id == 0x1c:
-                                        rec = self.u1('rec')
-                                        tag = self.u1('tag')
-                                        len = self.u2('len')
-                                        if tag == 25:
-                                            # Keywords
-                                            kw = self.read(len).rstrip(b'\0')
-                                            self.vset('keywords', kw)
-                        self.hexdump(self.read())
+                            self.app13_photoshop()
+                        else:
+                            self.hexdump(self.read())
                 elif name == 'DQT':
                     with self.substream(size - 2):
                         qt = self.u1()
@@ -204,6 +188,61 @@ class JpgDecoder(Decoder):
                 else:
                     self.hexdump(self.read(size - 2))
         return True
+
+    def app13_photoshop(self):
+        """Decode APP13 data"""
+        while True:
+            try:
+                type = self.read(4)
+            except EOFError:
+                break
+            self.vset('type', type)
+            if type == b'8BIM':
+                # Image Resource Block
+                with self.endian(True):
+                    itag = self.u2('itag')
+                    nlen = self.u1()
+                    tag_name = self.read(nlen)
+                    self.vset('tag', tag_name)
+                    if nlen % 2 == 0:
+                        self.read(1) # Align
+                    size = self.u4('_size')
+                    with self.substream(size):
+                        if itag == 0x0404:
+                            # IPC Tags
+                            with self.view.array('IPCTags'):
+                                i = 0
+                                while True:
+                                    try:
+                                        id = self.u1()
+                                    except EOFError:
+                                        break
+                                    i += 1
+                                    with self.view.map(i):
+                                        self.vset('id', id)
+                                        if id == 0x1c:
+                                            rec = self.u1('rec')
+                                            tag = self.u1('tag')
+                                            len = self.u2('_len')
+                                            if tag == 0:
+                                                self.u2('version')
+                                            elif tag == 90:
+                                                # CodedCharacterSet
+                                                cset = self.read(len)
+                                                self.vset('charset', cset)
+                                            elif tag == 25:
+                                                # Keywords
+                                                kw = self.read(len).rstrip(b'\0')
+                                                self.vset('keywords', kw)
+                                            else:
+                                                self.hexdump(self.read(len))
+                        elif itag == 0x0425:
+                            # IPC Digest
+                            with self.view.map('ITCDigest'):
+                                digest = self.read()
+                                self.view.blob('digest', digest)
+                        self.hexdump(self.read())
+        self.hexdump(self.read())
 
     # Specific read methods
     def sz(self):
