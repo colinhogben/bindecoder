@@ -1,5 +1,7 @@
 #=======================================================================
-#       Decode binary files
+"""
+Decode binary files
+"""
 #=======================================================================
 from __future__ import print_function
 from contextlib import contextmanager
@@ -37,6 +39,14 @@ class Decoder:
     def u4(self, name=None):
         """Unsigned 32-bit integer"""
         return self.scalar(name, 4, 'I')
+
+    def i8(self, name=None):
+        """Signed 64-bit integer"""
+        return self.scalar(name, 8, 'q')
+
+    def u8(self, name=None):
+        """Unsigned 64-bit integer"""
+        return self.scalar(name, 8, 'Q')
 
     def f4(self, name=None):
         """Unsigned 32-bit floating-point"""
