@@ -31,7 +31,7 @@ class AVIDecoder(Decoder):
         with self.substream(size):
             if ckid == 'LIST':
                 ltype = self.s4()
-                with self.view.map(ltype):
+                with self.view.map('LIST_'+ltype):
                     self.vset('_size', size)
                     method = getattr(self, 'do_'+ltype, None)
                     if method:
@@ -46,6 +46,9 @@ class AVIDecoder(Decoder):
                     rest = self.read()
                     if rest:
                         self.view.blob('_rest', rest)
+        padsize = 1 - (size + 1) % 2
+        if padsize:
+            self.view.blob('_pad', self.read(padsize))
         return True
 
     # Chunk types
@@ -87,7 +90,7 @@ class AVIDecoder(Decoder):
             self.u2('left')
             self.u2('top')
             self.u2('right')
-            self.vset('bottom', self.u2())
+            self.u2('bottom')
 
     def do_strf(self):
         if self.streamtype == 'vids':
@@ -119,7 +122,80 @@ class AVIDecoder(Decoder):
         self.u4('AvgBytesPerSec')
         self.u2('BlockAlign')
         self.u2('BitsPerSample')
-        self.u2('Size')
+        try:
+            self.u2('Size')
+        except EOFError:
+            pass
+
+    def do_strd(self):
+        type = self.s4()
+        self.vset('type', type)
+        from jpgdecode import decode_ifd
+        self.view.blob('_unknown', self.read(4))
+        decode_ifd(self, self.pos, self.pos)
+        #0a01
+        #0100
+        #0007  nifd=7 @start
+        #010f=Make
+        #0002  ftype=ASCII
+        #0009  count=len incl \0
+        #0000
+        #005a  =offset from start
+        #0000
+        #0110=Model
+        #0002  ftype=ASCII
+        #0011  count=len incl \0
+        #0000
+        #0064  =offset from start
+        #0000
+        #0132=DateTime
+        #0002  ftype=ASCII
+        #0014  count=len incl \0
+        #0000
+        #0076  =offset from start
+        #0000
+        #0201=ThumbnailOffset
+        #0004  ftype=ASCII
+        #0001  count=1
+        #0000
+        #01b8  value=440 (exiftool says 668)
+        #0000
+        #0202=ThumbnailLength
+        #0004  ftype=LONG
+        #0001  count=1
+        #0000
+        #308b  value=12427
+        #0000
+        #8298=Copyright
+        #0002  ftype=ASCII
+        #0005  count=len incl \0
+        #0000
+        #008a  =offset from start
+        #0000
+        #8769=ExifIFD
+        #0004  ftype=LONG
+        #0001  count=1
+        #0000
+        #0009  value=9
+        #0000
+        #0000==
+        #0000
+        #FUJIFILM
+        #0000
+        #FinePix6800 ZOOM
+        #0000
+        #2001:10:02 00:35:05
+        #00
+        #'    '
+        #0000
+        #0003
+        #9003
+
+    def do_strn(self):
+        name = self.read()
+        if name.endswith(b'\0'):
+            name = name[:-1]
+        self.vset('name', name.decode('iso-8859-1'))
 
     movi_map = dict(db='Uncompressed video frame',
                     dc='Compressed video frame',
@@ -127,13 +203,22 @@ class AVIDecoder(Decoder):
                     wb='Audio data')
 
     def do_movi(self):
-        snty = self.s4()
-        sn, ty = snty[:2], snty[2:]
-        self.vset('stream', int(sn))
-        self.vset('type', '%s (%s)' % (ty, self.movi_map.get(ty, '?')))
-        size = self.u4()
-        self.vset('_size', size)
-        self.hexdump(self.read())
+        i = 0
+        while True:
+            try:
+                snty = self.s4()
+            except EOFError:
+                return
+            with self.view.map(i):
+                sn, ty = snty[:2], snty[2:]
+                self.vset('stream', int(sn))
+                self.vset('type', '%s (%s)' % (ty, self.movi_map.get(ty, '?')))
+                size = self.u4()
+                self.vset('_size', size)
+                self.hexdump(self.read(size))
+                if size % 4:
+                    self.vset('_pad', self.read(4 - size % 4))
+            i += 1
 
     def do_idx1(self):
         """Decode AVIOLDINDEX"""
