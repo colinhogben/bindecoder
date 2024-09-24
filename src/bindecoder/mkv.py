@@ -1,10 +1,12 @@
-#!/usr/bin/python3
 #=======================================================================
-#       Decode Matroaska or webm file
+"""
+Decode Matroska or webm file
+"""
+#       References:
 #	https://www.matroska.org/technical/elements.html
 #=======================================================================
-from decoder import Decoder, PlainViewer
-from hexdumper import HexDumper
+from .decoder import Decoder
+from .hexdumper import HexDumper
 
 C_UNKNOWN, C_ELEMENTS, C_UINT, C_FLOAT, C_STRING, C_UTF8 = range(6)
 
@@ -203,10 +205,12 @@ class EBMLDecoder(Decoder):
             self.vset('dump_size', len(data))
 
 def main():
+    from .viewer import PlainViewer
     import sys
     view = PlainViewer()
     with open(sys.argv[1],'rb') as f:
         dec = EBMLDecoder(f, view)
         dec.run()
 
-main()
+if __name__=='__main__':
+    main()

@@ -1,13 +1,13 @@
-#!/usr/bin/python3
 #=======================================================================
-#       Decode FLV file
-#
+"""
+Decode FLV file
+"""
+#       References:
 #       https://en.wikipedia.org/wiki/Flash_Video
 #       https://www.adobe.com/content/dam/acom/en/devnet/flv/video_file_format_spec_v10.pdf
 #=======================================================================
-from decoder import Decoder, PlainViewer
-import struct
-from hexdumper import HexDumper
+from .decoder import Decoder
+from .hexdumper import HexDumper
 
 class FLVDecoder(Decoder):
     def __init__(self, file, view):
@@ -18,20 +18,20 @@ class FLVDecoder(Decoder):
         sig = self.read(3)
         if sig != b'FLV':
             raise ValueError('Not a FLV file')
-        self.putv('Version', self.u1())
+        self.vset('Version', self.u1())
         tf = self.u1()
         assert (tf & 0b11111010) == 0
-        self.putv('AudioTags', (tf & 4) != 0)
-        self.putv('VideoTags', (tf & 1) != 0)
+        self.vset('AudioTags', (tf & 4) != 0)
+        self.vset('VideoTags', (tf & 1) != 0)
         doff = self.u4()
-        self.putv('DataOffset', doff)
+        self.vset('DataOffset', doff)
         self.read(doff - self.pos)
         with self.view.array('Tag'):
             i = 0
             while True:
                 with self.view.map(i):
                     # Sequence of back-pointers
-                    self.putv('PreviousTagSize', self.u4())
+                    self.vset('PreviousTagSize', self.u4())
                     self.tag()
                     #break
                 i += 1
@@ -39,18 +39,18 @@ class FLVDecoder(Decoder):
     def tag(self):
         tagtype = self.u1()
         if tagtype == 8:
-            self.putv('TagType', 'audio')
+            self.vset('TagType', 'audio')
         elif tagtype == 9:
-            self.putv('TagType', 'video')
+            self.vset('TagType', 'video')
         elif tagtype == 18:
-            self.putv('TagType', 'script data')
+            self.vset('TagType', 'script data')
         else:
-            self.putv('TagType', tagtype)
+            self.vset('TagType', tagtype)
         dsize = self.ui24()
-        self.putv('DataSize', dsize)
-        self.putv('Timestamp', self.ui24())
-        self.putv('TimestampExtended', self.u1())
-        self.putv('StreamID', self.ui24())
+        self.vset('DataSize', dsize)
+        self.vset('Timestamp', self.ui24())
+        self.vset('TimestampExtended', self.u1())
+        self.vset('StreamID', self.ui24())
         with self.substream(dsize):
             if tagtype == 18:
                 self.script_data()
@@ -76,8 +76,8 @@ class FLVDecoder(Decoder):
             tid = self.u1()
             ftype = tid >> 4
             codecid = tid & 0xf
-            self.putv('FrameType', self.frametype_map.get(ftype,ftype))
-            self.putv('CodecID', self.codecid_map.get(codecid,codecid))
+            self.vset('FrameType', self.frametype_map.get(ftype,ftype))
+            self.vset('CodecID', self.codecid_map.get(codecid,codecid))
             
     def script_data(self):
         with self.view.array('ScriptData'):
@@ -95,7 +95,7 @@ class FLVDecoder(Decoder):
                 with self.view.map(i):
                     if nt not in (2, 12):
                         raise ValueError('Unexpected type %d for name' % nt)
-                    self.putv('Name', name)
+                    self.vset('Name', name)
                     vt, value = self.obj()
                     if vt == 8: # ECMAarray
                         alen = value
@@ -104,9 +104,9 @@ class FLVDecoder(Decoder):
                                 klen = self.u2()
                                 key = self.read(klen).decode('ascii')
                                 xt, xvalue = self.obj()
-                                self.putv(key, xvalue)
+                                self.vset(key, xvalue)
                     else:
-                        self.putv('Value', value)
+                        self.vset('Value', value)
                 #nlen = self.u2()
                 #if nlen == 0:
                 #    # 00 00 09 = SCRIPTDATAOBJECTEND
@@ -114,7 +114,7 @@ class FLVDecoder(Decoder):
     def obj(self):
         otype = self.u1()
         if otype == 0:          # Number
-            value = self.double()
+            value = self.f8()
             if value == int(value):
                 value = int(value)
         elif otype == 1:        # Boolean
@@ -132,22 +132,15 @@ class FLVDecoder(Decoder):
     def hexdump(self, data, limit=256):
         for line in HexDumper(data[:limit]).iter_lines():
             offset, _, dump = line.partition(': ')
-            self.putv(offset[1:].replace(' ','0'), dump)
+            self.vset(offset[1:].replace(' ','0'), dump)
         if len(data) > limit:
-            self.putv('dump_size', len(data))
+            self.vset('dump_size', len(data))
                       
-    def putv(self, name, value):
-        self.view.set(name, value)
-
     # FLV-specific low-level items
     def ui24(self):
         hi = self.u1()
         lo = self.u2()
         return (hi << 16) | lo
-
-    def double(self):
-        value, = struct.unpack('>d', self.read(8))
-        return value
 
     def s4(self):
         """Read a 4-byte string (fourcc)"""
@@ -155,10 +148,12 @@ class FLVDecoder(Decoder):
         return b4.decode('iso-8859-1')
 
 def main():
+    from .viewer import PlainViewer
     import sys
     view = PlainViewer()
     with open(sys.argv[1],'rb') as f:
         dec = FLVDecoder(f, view)
         dec.run()
 
-main()
+if __name__=='__main__':
+    main()

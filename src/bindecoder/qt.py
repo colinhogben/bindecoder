@@ -1,14 +1,15 @@
-#!/usr/bin/python3
 #=======================================================================
-#       Decode Quicktime (.mov) file
+"""
+Decode Quicktime (.mov) file
+"""
 #	Also MPEG-4 (mp42) and JPEG-2000 (isom) (?)
 #	ISO/IEC 14496-12:2004 (MPEG-4 Part 12: ISO base media file format)
 #
 #	https://en.wikipedia.org/wiki/QuickTime_File_Format
 #	https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFPreface/qtffPreface.html
 #=======================================================================
-from decoder import Decoder, PlainViewer
-from hexdumper import HexDumper
+from .decoder import Decoder
+from .hexdumper import HexDumper
 
 class QtDecoder(Decoder):
     def __init__(self, file, view):
@@ -32,7 +33,7 @@ class QtDecoder(Decoder):
         with self.substream(size - 8):
 
             with self.view.map("'%s'" % atype):
-                self.putv('_size', size)
+                self.vset('_size', size)
                 method = getattr(self, 'do_'+atype, None)
                 if method:
                     method()
@@ -58,8 +59,8 @@ class QtDecoder(Decoder):
 
     def do_ftyp(self):
         brand = self.s4()       # 'qt  ' or 'mp42'
-        self.putv('brand', brand)
-        self.putv('minor', self.u4())
+        self.vset('brand', brand)
+        self.vset('minor', self.u4())
         with self.view.array('compatible'):
             i = 0
             while True:
@@ -68,180 +69,177 @@ class QtDecoder(Decoder):
                 except EOFError:
                     break
                 if comp != '\0\0\0\0':
-                    self.putv(i, comp)
+                    self.vset(i, comp)
                 i += 1
 
     def do_tkhd(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
-        self.putv('creation_time', self.u4())
-        self.putv('modification_time', self.u4())
-        self.putv('track_id', self.u4())
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
+        self.vset('creation_time', self.u4())
+        self.vset('modification_time', self.u4())
+        self.vset('track_id', self.u4())
         self.read(4)               # Reserved
-        self.putv('duration', self.u4())
+        self.vset('duration', self.u4())
         self.read(8)               # Reserved
-        self.putv('layer', self.u2())
-        self.putv('alternate_group', self.u2())
-        self.putv('volume', self.u2())
+        self.vset('layer', self.u2())
+        self.vset('alternate_group', self.u2())
+        self.vset('volume', self.u2())
         self.read(2)               # Reserved
         #m = [s.v4() for i in range(9)]
         #self.put('matrix = ( %8g %8g %8g )' % (m[0], m[1], m[2]/16384))
         #self.put('         ( %8g %8g %8g )' % (m[3], m[4], m[5]/16384))
         #self.put('         ( %8g %8g %8g )' % (m[6], m[7], m[8]/16384))
         self.matrix('matrix')
-        self.putv('track_width', self.v4())
-        self.putv('track_height', self.v4())
+        self.vset('track_width', self.v4())
+        self.vset('track_height', self.v4())
         self.hexdump(self.read())
 
     def do_hdlr(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
-        self.putv('component_type', self.s4())
-        self.putv('component_subtype', self.s4())
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
+        self.vset('component_type', self.s4())
+        self.vset('component_subtype', self.s4())
         self.read(12)              # Reserved (manuf, flags, flagsmask)
         self.hexdump(self.read())
 
     def do_mdhd(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
-        self.putv('creation_time', self.u4())
-        self.putv('modification_time', self.u4())
-        self.putv('timescale', self.u4())
-        self.putv('duration', self.u4())
-        self.putv('language', self.u2())
-        self.putv('quality', self.u2())
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
+        self.vset('creation_time', self.u4())
+        self.vset('modification_time', self.u4())
+        self.vset('timescale', self.u4())
+        self.vset('duration', self.u4())
+        self.vset('language', self.u2())
+        self.vset('quality', self.u2())
         self.hexdump(self.read())
 
     def do_mvhd(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
-        self.putv('creation_time', self.u4())
-        self.putv('modification_time', self.u4())
-        self.putv('timescale', self.u4())
-        self.putv('duration', self.u4())
-        self.putv('preferred_rate', self.fix32())
-        self.putv('preferred_volume', self.u2()) # FIXME fixed 16
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
+        self.vset('creation_time', self.u4())
+        self.vset('modification_time', self.u4())
+        self.vset('timescale', self.u4())
+        self.vset('duration', self.u4())
+        self.vset('preferred_rate', self.fix32())
+        self.vset('preferred_volume', self.u2()) # FIXME fixed 16
         self.read(10)
         self.matrix('matrix')
-        self.putv('preview_time', self.u4())
-        self.putv('poster_time', self.u4())
-        self.putv('poster_duration', self.u4())
-        self.putv('selection_time', self.u4())
-        self.putv('selection_duration', self.u4())
-        self.putv('current_time', self.u4())
-        self.putv('next_track_id', self.u4())        
+        self.vset('preview_time', self.u4())
+        self.vset('poster_time', self.u4())
+        self.vset('poster_duration', self.u4())
+        self.vset('selection_time', self.u4())
+        self.vset('selection_duration', self.u4())
+        self.vset('current_time', self.u4())
+        self.vset('next_track_id', self.u4())        
 
     def do_vmhd(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
-        self.putv('graphics_mode', self.u2())
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
+        self.vset('graphics_mode', self.u2())
         r, g, b = [self.u2() for i in range(3)]
-        self.putv('opcolor', '(%d, %d, %d)' % (r, g, b))
+        self.vset('opcolor', '(%d, %d, %d)' % (r, g, b))
 
     def do_dref(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         with self.view.array('entries'):
             for i in range(nent):
                 with self.view.array(i):
                     esize = self.u4()
-                    self.putv('type', self.s4())
+                    self.vset('type', self.s4())
                     evf = self.u4()
-                    self.putv('version', evf >> 24)
-                    self.putv('flags', evf & 0xffffff)
+                    self.vset('version', evf >> 24)
+                    self.vset('flags', evf & 0xffffff)
                     edata = self.read(esize - 12)
                     if edata:
                         self.hexdump(edata)
 
     def do_stsd(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         for i in range(nent):
             with self.view.map('entry[%d]' % i):
                 esize = self.u4()
-                self.putv('size', esize)
-                self.putv('format', self.s4())
+                self.vset('size', esize)
+                self.vset('format', self.s4())
                 self.read(6)       # Reserved
-                self.putv('data_reference_index', self.u2())
+                self.vset('data_reference_index', self.u2())
                 self.hexdump(self.read(esize - 16))
 
     def do_stts(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         for i in range(nent):
             with self.view.map('entry[%d]' % i):
-                self.putv('sample_count', self.u4())
-                self.putv('sample_duration', self.u4())
+                self.vset('sample_count', self.u4())
+                self.vset('sample_duration', self.u4())
 
     def do_stss(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         for i in range(nent):
-            self.putv('sample[%d]' % i, self.u4())
+            self.vset('sample[%d]' % i, self.u4())
 
     def do_stsc(self):
         """Map sample numbers to chunk numbers"""
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         for i in range(nent):
-            self.putv('sample[%d].first' % i, self.u4())
-            self.putv('sample[%d].samples' % i, self.u4())
-            self.putv('sample[%d].descID' % i, self.u4())
+            self.vset('sample[%d].first' % i, self.u4())
+            self.vset('sample[%d].samples' % i, self.u4())
+            self.vset('sample[%d].descID' % i, self.u4())
         
     def do_stsz(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         sampsize = self.u4()
-        self.putv('sample_size', sampsize)
+        self.vset('sample_size', sampsize)
         if sampsize == 0:       # Use table
             nent = self.u4()
-            self.putv('nent', nent)
+            self.vset('nent', nent)
             for i in range(nent):
-                self.putv('size[%d]' % i, self.u4())
+                self.vset('size[%d]' % i, self.u4())
         else:
             # Junk?
             self.hexdump(self.read())
 
     def do_stco(self):
         vf = self.u4()
-        self.putv('version', vf >> 24)
-        self.putv('flags', vf & 0xffffff)
+        self.vset('version', vf >> 24)
+        self.vset('flags', vf & 0xffffff)
         nent = self.u4()
         for i in range(nent):
-            self.putv('offset[%d]' % i, self.u4())
+            self.vset('offset[%d]' % i, self.u4())
 
     def matrix(self, name):
         for row in range(3):
             v0, v1, v2 = self.fix32(16), self.fix32(16), self.fix32(30)
-            self.putv('%s_%d' % (name, row),
+            self.vset('%s_%d' % (name, row),
                       '( %8g %8g %8g )' % (v0, v1, v2))
 
     # Output methods
     def hexdump(self, data, limit=256):
         for line in HexDumper(data[:limit]).iter_lines():
             offset, _, dump = line.partition(': ')
-            self.putv(offset[1:].replace(' ','0'), dump)
+            self.vset(offset[1:].replace(' ','0'), dump)
         if len(data) > limit:
-            self.putv('dump_size', len(data))
-
-    def putv(self, name, value):
-        self.view.set(name, value)
+            self.vset('dump_size', len(data))
 
     # Qt-specific low-level items
     def s4(self):
@@ -260,10 +258,12 @@ class QtDecoder(Decoder):
         return float(val) / (1 << fracbits)
 
 def main():
+    from .viewer import PlainViewer
     import sys
     view = PlainViewer()
     with open(sys.argv[1],'rb') as f:
         dec = QtDecoder(f, view)
         dec.run()
 
-main()
+if __name__=='__main__':
+    main()

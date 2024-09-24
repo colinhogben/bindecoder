@@ -1,6 +1,8 @@
-#!/usr/bin/python3
 #=======================================================================
-#       Decode JPEG (JFIF) file
+"""
+Decode JPEG (JFIF) file
+"""
+#	References:
 #       https://en.wikipedia.org/wiki/JPEG
 #       http://vip.sugovica.hu/Sardi/kepnezo/JPEG%20File%20Layout%20and%20Format.htm
 #       https://users.cs.cf.ac.uk/Dave.Marshall/Multimedia/node234.html
@@ -8,8 +10,8 @@
 #       https://www.w3.org/Graphics/JPEG/itu-t81.pdf
 #	https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/
 #=======================================================================
-from decoder import Decoder, PlainViewer
-from hexdumper import HexDumper
+from .decoder import Decoder
+from .hexdumper import HexDumper
 
 marker_name = {
     0xC0:'SOF0',
@@ -415,10 +417,11 @@ class TIFFDecoder(Decoder):
         decode_ifd(self, ifdpos)
 
 def main():
+    from .viewer import PlainViewer
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('-e','--ecd','--entropy-coded-data', action='store_true',
-                    help='Dump entry-coded data')
+                    help='Dump entropy-coded data')
     ap.add_argument('jpgfile',
                     help='JPEG file to dump')
     args = ap.parse_args()

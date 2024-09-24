@@ -1,12 +1,13 @@
-#!/usr/bin/python3
 #=======================================================================
-#       Decode AVI file
-#
+"""
+Decode AVI file
+"""
+#       References:
 #       https://en.wikipedia.org/wiki/Resource_Interchange_File_Format
 #       http://msdn2.microsoft.com/en-us/library/ms779636(VS.85).aspx
 #=======================================================================
-from decoder import Decoder, PlainViewer
-from hexdumper import HexDumper
+from .decoder import Decoder
+from .hexdumper import HexDumper
 
 class AVIDecoder(Decoder):
     def __init__(self, file, view):
@@ -277,10 +278,12 @@ class AVIDecoder(Decoder):
         return b4.decode('iso-8859-1')
 
 def main():
+    from .viewer import PlainViewer
     import sys
     view = PlainViewer()
     with open(sys.argv[1],'rb') as f:
         dec = AVIDecoder(f, view)
         dec.run()
 
-main()
+if __name__=='__main__':
+    main()
