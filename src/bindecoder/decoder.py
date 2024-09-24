@@ -3,12 +3,12 @@
 Decode binary files
 """
 #=======================================================================
-from __future__ import print_function
 from contextlib import contextmanager
 from io import BytesIO
 import struct
 
 class Decoder:
+    """Base class for decoding binary data"""
     def __init__(self, stream, view, big_endian=False):
         self.stream = stream
         self.view = view
@@ -81,6 +81,7 @@ class Decoder:
 
     @contextmanager
     def substream(self, size):
+        """Use the following size bytes as a self-contained stream"""
         data = self.read(size)
         sub = BytesIO(data)
         self.stream_stack.append((self.stream, self.pos))
@@ -92,6 +93,7 @@ class Decoder:
 
     @contextmanager
     def endian(self, big):
+        """Temporarily use a given endianness"""
         old_end, self.end = self.end, '>' if big else '<'
         try:
             yield
@@ -100,104 +102,5 @@ class Decoder:
 
     def vset(self, name, value):
         self.view.set(name, value)
+        return value
 
-#-----------------------------------------------------------------------
-#       Viewer
-#-----------------------------------------------------------------------
-class Viewer:
-    """Abstract base class"""
-    @contextmanager
-    def map(self, name):
-        self.enter_map(name)
-        try:
-            yield
-        finally:
-            self.exit()
-
-    @contextmanager
-    def array(self, name):
-        self.enter_array(name)
-        try:
-            yield
-        finally:
-            self.exit()
-
-    def enter_map(self, name):
-        raise NotImplementedError
-
-    def enter_array(self, name):
-        raise NotImplementedError
-
-    def set(self, name, value):
-        raise NotImplementedError
-
-    def blob(self, name, data):
-        """Typically unparsed data, or wrapped encoded data"""
-        raise NotImplementedError
-
-class PlainViewer(Viewer):
-    def __init__(self):
-        self.level = 0
-
-    def set(self, name, value):
-        self.show('%s = %r' % (name, value))
-
-    def blob(self, name, data):
-        hdata = ' '.join('%02x' % b for b in data[:16])
-        if len(data) > 16:
-            hdata += '...'
-        self.show('%s[%d]: %s' % (name, len(data), hdata))
-
-    def show(self, text):
-        print('%s%s' % ('  ' * self.level, text))
-
-    def enter(self, name):
-        self.show('%s:' % name)
-        self.level += 1
-
-    enter_map = enter
-    enter_array = enter
-
-    def exit(self):
-        self.level -= 1
-
-class DataViewer(Viewer):
-    """Build a native data structure using dicts and lists"""
-    map_class = dict
-    array_class = list
-
-    def __init__(self):
-        super(Viewer,self).__init__()
-        self.stack = []
-        self.cur = self.map_class()
-
-    def enter_map(self, name):
-        new = self.map_class()
-        self.set(name, new)
-        self.stack.append(self.cur)
-        self.cur = new
-
-    def enter_array(self, name):
-        new = self.array_class()
-        self.set(name, new)
-        self.stack.append(self.cur)
-        self.cur = new
-
-    def exit(self):
-        self.cur = self.stack.pop()
-
-    def set(self, name, value):
-        if isinstance(self.cur, list):
-            if name != len(self.cur):
-                raise IndexError('Invalid array index %s, expected %d' %
-                                 (name, len(self.cur)))
-            self.cur.append(value)
-        else:
-            if name in self.cur:
-                raise KeyError('Repeatsd key "%s"' % name)
-            self.cur[name] = value
-
-    blob = set
-
-    def result(self):
-        return self.cur
