@@ -4,6 +4,7 @@ Back ends for bindecoder
 """
 #=======================================================================
 from contextlib import contextmanager
+import re
 
 class Viewer:
     """Base class for bindecoder back ends"""
@@ -104,3 +105,48 @@ class DataViewer(Viewer):
     def result(self):
         """Get the built data structure"""
         return self.cur
+
+class PathViewer(Viewer):
+    """Restrict to a subpath of the data tree"""
+    def __init__(self, path, child):
+        self.path = path
+        self.child = child
+        self.level = -1
+        self.steps = []
+
+    def enter(self, key, child_enter):
+        if self.level >= 0:
+            # Already within desired scope
+            child_enter(key)
+            self.level += 1
+        else:
+            self.steps.append(str(key))
+            curpath = '/'.join(self.steps)
+            if curpath == self.path:
+                # Found it
+                self.level = 0
+
+    def enter_map(self, name):
+        self.enter(name, self.child.enter_map)
+
+    def enter_array(self, name):
+        self.enter(name, self.child.enter_map)
+
+    def exit(self):
+        if self.level > 0:
+            self.child.exit()
+            self.level -= 1
+        else:
+            del self.steps[-1]
+            self.level = -1
+
+    def set(self, name, data):
+        if self.level >= 0:
+            self.child.set(name, data)
+
+    def blob(self, name, data):
+        if self.level >= 0:
+            self.child.blob(name, data)
+
+    def result(self):
+        return self.child.result()
