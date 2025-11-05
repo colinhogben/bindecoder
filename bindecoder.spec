@@ -10,11 +10,11 @@ Summary:    	%{summary}
 License:	MIT
 Vendor:		%{author} <%{author_email}>
 URL:		https://github.com/colinhogben/bindecoder
-Source:		%{pypackage}-%{version}.tar.gz
+Source:		%{pkg}-%{version}.tar.gz
 #
 BuildArch:	noarch
-BuildRequires:	python%{python3_pkgversion}-devel
-BuildRequires:	python%{python3_pkgversion}-setuptools
+#BuildRequires:	python%{python3_pkgversion}-devel
+#BuildRequires:	python%{python3_pkgversion}-setuptools
 %description
 %{summary}
 

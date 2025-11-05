@@ -7,7 +7,7 @@ ARCH = noarch
 
 # Derived
 TOPDIR = $(shell pwd)
-TARBALL = $(PYPROJECT)-$(VERSION).tar.gz
+TARBALL = $(PKG)-$(VERSION).tar.gz
 SRPM = $(PKG)-$(VERSION)-$(RELEASE).src.rpm
 RPM = $(RPMNAME)-$(VERSION)-$(RELEASE).$(ARCH).rpm
 
@@ -23,7 +23,9 @@ release:	tarball rpm srpm
 tarball:	SOURCES/$(TARBALL)
 SOURCES/$(TARBALL):	$(SOURCES)
 	@mkdir -p SOURCES
-	tar czf $@ $(SOURCES)
+	tar czf $@ \
+		--transform "s#^#$(PKG)-$(VERSION)/#" \
+		$(SOURCES)
 
 # Copy and customise spec file
 SPECS/$(PKG).spec:	bindecoder.spec pyproject.toml
