@@ -1,0 +1,17 @@
+name: Packaging
+on: [push]
+jobs:
+  build_tarball:
+    name: Build source archive
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+#      - name: Replace version in RPM spec
+#        run: sed -i 's/^Version:.*/Version: ${{github.ref_name}}/' ${{vars.PKG_NAME}}.spec
+
+      - name: Create tarball and RPMs
+        run: make release
+
+        
