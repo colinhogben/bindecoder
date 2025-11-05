@@ -1,0 +1,15 @@
+name: First Action
+run-name: ${{ github.actor }} first attempt
+on: [push]
+jobs:
+  explore:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Triggered on ${{ github.event_name }}"
+      - run: echo "Branch ${{ github.ref }}"
+      - name: Check out repo
+        uses: actions/checkout@v5
+      - name: List files
+        run: |
+          ls -al ${{ github.workspace }}
+      - run: echo "Status ${{ job.status }}"
