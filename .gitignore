@@ -1,3 +1,8 @@
 __pycache__/
 dist/
 *.egg-info/
+SPECS/
+SOURCES/
+SRPMS/
+RPMS/
+version.mk
